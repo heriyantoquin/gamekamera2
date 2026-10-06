@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>SANTUN: Misi Dakwah Damai — Adventure AR Game</title>
+<meta name="description" content="Game edukasi AR tentang khotbah, tabligh, dan dakwah yang santun dan damai untuk siswa kelas XI SMA/MA." />
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+<style>
+  :root{
+    --teal-900:#06373a;
+    --teal-800:#0b4f52;
+    --teal-700:#0f6e6b;
+    --teal-500:#14b8a6;
+    --cream:#fdf6e7;
+    --cream-2:#f6e9cd;
+    --gold:#f0b43c;
+    --gold-2:#ffd278;
+  }
+  *{ -webkit-tap-highlight-color: transparent; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    background: radial-gradient(1200px 800px at 20% 0%, #0d6b68 0%, #073a3e 45%, #04252a 100%);
+    color: var(--cream);
+    overflow:hidden;
+    overscroll-behavior:none;
+  }
+  #app{ position:fixed; inset:0; display:flex; flex-direction:column; }
+  .stage{ position:absolute; inset:0; overflow:hidden; }
+  #camVideo{
+    position:absolute; inset:0; width:100%; height:100%;
+    object-fit:cover; transform: scaleX(-1); opacity:0; transition:opacity .6s ease;
+    background:#04252a;
+  }
+  #camVideo.on{ opacity:1; }
+  #bgGrad{
+    position:absolute; inset:0;
+    background:
+      radial-gradient(900px 600px at 80% 110%, rgba(240,180,60,.20), transparent 60%),
+      radial-gradient(700px 520px at 15% 10%, rgba(20,184,166,.22), transparent 65%),
+      linear-gradient(180deg, rgba(4,37,42,.35), rgba(4,37,42,.65));
+    pointer-events:none;
+  }
+  #glcanvas{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:manipulation; }
+  .ui-layer{ position:absolute; inset:0; pointer-events:none; display:flex; flex-direction:column; }
+  .ui-layer > *{ pointer-events:auto; }
+  .glass{
+    background: linear-gradient(180deg, rgba(6,55,58,.86), rgba(4,37,42,.80));
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border:1px solid rgba(240,180,60,.35);
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:.4rem;
+    border-radius:999px; font-weight:700; line-height:1.1;
+    border:1px solid rgba(253,246,231,.25);
+    background: rgba(253,246,231,.10); color:var(--cream);
+    padding:.55rem .9rem; font-size:.92rem; cursor:pointer;
+    transition: transform .12s ease, background .2s ease, border-color .2s ease;
+  }
+  .btn:hover{ background: rgba(253,246,231,.2); transform: translateY(-1px); }
+  .btn:active{ transform: translateY(0) scale(.98); }
+  .btn:focus-visible, a:focus-visible, [tabindex]:focus-visible{
+    outline:3px solid var(--gold-2); outline-offset:3px;
+  }
+  .btn-primary{
+    background: linear-gradient(180deg, var(--gold-2), var(--gold));
+    color:#3a2605; border-color:#ffe6b0;
+    box-shadow: 0 8px 22px rgba(240,180,60,.35);
+  }
+  .btn-primary:hover{ background: linear-gradient(180deg, #ffdf9a, #f3bd55); }
+  .btn-teal{
+    background: linear-gradient(180deg, #19d3bd, #0f8f86);
+    color:#042a28; border-color:#9ff3e7;
+  }
+  .btn[aria-pressed="true"]{ border-color: var(--gold-2); background: rgba(240,180,60,.28); }
+  .chip{
+    display:inline-flex; align-items:center; gap:.35rem;
+    border-radius:999px; padding:.3rem .7rem; font-size:.82rem; font-weight:700;
+    background: rgba(253,246,231,.12); border:1px solid rgba(253,246,231,.22);
+    white-space:nowrap;
+  }
+  .screen{ position:absolute; inset:0; display:flex; overflow-y:auto; }
+  .hidden{ display:none !important; }
+  #cursorDot{
+    position:absolute; width:34px; height:34px; margin-left:-17px; margin-top:-17px;
+    border-radius:999px; border:3px solid var(--gold-2);
+    background: radial-gradient(circle, rgba(255,210,120,.65), rgba(255,210,120,.08) 70%);
+    box-shadow:0 0 18px rgba(255,210,120,.7);
+    pointer-events:none; transition: width .12s, height .12s, background .12s; z-index:40;
+  }
+  #cursorDot.pinch{ width:22px; height:22px; margin-left:-11px; margin-top:-11px; background: radial-gradient(circle, rgba(94,255,218,.85), rgba(94,255,218,.1) 70%); border-color:#7ef7dd;}
+  .progress-track{ height:10px; border-radius:999px; background: rgba(253,246,231,.18); overflow:hidden; }
+  .progress-bar{ height:100%; border-radius:999px; background: linear-gradient(90deg,#19d3bd,var(--gold)); transition: width .45s ease; }
+  .scroll-area{ overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .opt-btn{
+    display:flex; gap:.6rem; align-items:flex-start; text-align:left; width:100%;
+    border-radius:1rem; padding:.7rem .85rem; font-size:.9rem; font-weight:600;
+    background: rgba(253,246,231,.08); border:1px solid rgba(253,246,231,.22); color:var(--cream);
+    cursor:pointer; transition: background .15s ease, border-color .15s ease;
+  }
+  .opt-btn:hover:not(:disabled){ background: rgba(240,180,60,.22); border-color:var(--gold-2); }
+  .opt-btn:disabled{ opacity:.55; cursor:not-allowed; }
+  .opt-key{
+    flex:0 0 auto; width:1.6rem; height:1.6rem; border-radius:.5rem; display:grid; place-items:center;
+    background: var(--gold); color:#3a2605; font-weight:900; font-size:.8rem;
+  }
+  .fade-in{ animation: fade .35s ease both; }
+  @keyframes fade{ from{opacity:0; transform: translateY(8px);} to{opacity:1; transform:none;} }
+  .pulse-dot{ width:.6rem;height:.6rem;border-radius:999px;background:#9ca3af;display:inline-block; }
+  .pulse-dot.ok{ background:#34d399; box-shadow:0 0 10px #34d399; }
+  .pulse-dot.warn{ background:#fbbf24; }
+  .pulse-dot.err{ background:#f87171; }
+  .sr-only{
+    position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+    clip:rect(0,0,0,0);white-space:nowrap;border:0;
+  }
+  ::-webkit-scrollbar{ width:9px;height:9px; }
+  ::-webkit-scrollbar-thumb{ background: rgba(240,180,60,.5); border-radius:9px; }
+  ::-webkit-scrollbar-track{ background: rgba(0,0,0,.2); }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="stage" id="stage">
+    <video id="camVideo" playsinline muted autoplay aria-hidden="true"></video>
+    <div id="bgGrad"></div>
+    <canvas id="glcanvas" aria-label="Area permainan tiga dimensi berisi balon pilihan jawaban" role="img"></canvas>
+    <div id="cursorDot" class="hidden" aria-hidden="true"></div>
+
+    <!-- ===================== LAYER UI PERMAINAN ===================== -->
+    <div class="ui-layer" id="playUI" style="display:none">
+      <!-- HEADER -->
+      <header class="glass m-2 rounded-2xl px-3 py-2 flex flex-wrap items-center gap-2">
+        <div class="flex items-center gap-2 mr-auto min-w-0">
+          <div class="w-9 h-9 rounded-xl grid place-items-center shrink-0" style="background:linear-gradient(145deg,#19d3bd,#0b4f52);border:1px solid rgba(255,210,120,.5)">
+            <span aria-hidden="true" style="font-size:1.1rem">🕌</span>
+          </div>
+          <div class="min-w-0">
+            <p class="font-extrabold leading-tight text-sm sm:text-base truncate">SANTUN: Misi Dakwah Damai</p>
+            <p class="text-[11px] sm:text-xs opacity-80 leading-tight truncate">Khotbah • Tabligh • Dakwah — Adventure AR Game</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 flex-wrap justify-end">
+          <button class="btn !px-3 !py-1.5" id="btnHome" title="Kembali ke menu awal" aria-label="Kembali ke menu awal">⟵ <span class="hidden sm:inline">Kembali</span></button>
+          <button class="btn !px-3 !py-1.5" id="btnPause" title="Jeda permainan" aria-label="Jeda permainan">⏸ <span class="hidden sm:inline">Jeda</span></button>
+          <button class="btn !px-3 !py-1.5" id="btnCam" aria-pressed="false" title="Aktifkan atau matikan kamera" aria-label="Aktifkan atau matikan kamera">📷 <span class="hidden sm:inline">Kamera</span></button>
+          <button class="btn !px-3 !py-1.5" id="btnSound" aria-pressed="true" title="Aktifkan atau matikan suara" aria-label="Aktifkan atau matikan suara">🔊 <span class="hidden sm:inline">Suara</span></button>
+        </div>
+      </header>
+
+      <!-- PANEL SOAL + SKOR -->
+      <section class="glass mx-2 rounded-2xl px-3 py-2.5" aria-live="polite">
+        <div class="flex items-center gap-2 flex-wrap mb-1.5">
+          <span class="chip" id="chipQ">Soal 1/5</span>
+          <span class="chip" style="background:rgba(240,180,60,.22);border-color:rgba(255,210,120,.5)">⭐ Skor: <strong id="chipScore">0</strong>/50</span>
+          <span class="chip">✅ Benar: <strong id="chipRight">0</strong></span>
+          <span class="chip">🔁 Belum tepat: <strong id="chipWrong">0</strong></span>
+        </div>
+        <div class="progress-track" role="progressbar" id="progressBar" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" aria-label="Kemajuan soal">
+          <div class="progress-bar" id="progressFill" style="width:0%"></div>
+        </div>
+        <h2 class="mt-2 font-bold text-[0.95rem] sm:text-lg leading-snug" id="qText">Memuat soal…</h2>
+        <p class="text-[11px] sm:text-xs opacity-80 mt-1" id="qHint">Arahkan telunjuk ke balon lalu lakukan pinch (ibu jari + telunjuk) untuk memecahkannya. Tanpa kamera: klik/ketuk balon atau tekan tombol 1–4.</p>
+      </section>
+
+      <div class="flex-1"></div>
+
+      <!-- DAFTAR PILIHAN AKSESIBEL -->
+      <section class="mx-2 mb-1" id="optPanelWrap">
+        <button class="btn !text-xs !py-1 mb-1" id="btnToggleOpts" aria-expanded="false" aria-controls="optPanel">⌨️ Mode tombol (pilihan teks)</button>
+        <div class="glass rounded-2xl p-2 grid gap-1.5 hidden scroll-area" id="optPanel" style="max-height:38vh" role="group" aria-label="Daftar pilihan jawaban">
+        </div>
+      </section>
+
+      <!-- PANEL INSTRUKSI / STATUS -->
+      <footer class="glass m-2 rounded-2xl px-3 py-2 flex items-center gap-2 flex-wrap text-xs sm:text-sm">
+        <span class="pulse-dot" id="camDot" aria-hidden="true"></span>
+        <span id="camStatus" class="font-semibold">Mode manual: klik, ketuk, atau tekan 1–4</span>
+        <span class="chip ml-auto" id="gestureChip" aria-live="polite">Gestur: –</span>
+      </footer>
+    </div>
+
+    <!-- ===================== OPENING ===================== -->
+    <div class="screen" id="screenOpening">
+      <div class="m-auto w-full max-w-5xl p-3 sm:p-6">
+        <div class="glass rounded-3xl p-4 sm:p-7 fade-in">
+          <div class="flex flex-col lg:flex-row gap-5 items-center">
+            <div class="flex-1 min-w-0">
+              <span class="chip mb-2" style="background:rgba(240,180,60,.22);border-color:rgba(255,210,120,.5)">🎮 Adventure AR Game • Kelas XI SMA/MA</span>
+              <h1 class="text-2xl sm:text-4xl font-black leading-tight" style="text-shadow:0 3px 18px rgba(0,0,0,.45)">
+                SANTUN: <span style="color:var(--gold-2)">Misi Dakwah Damai</span>
+              </h1>
+              <p class="mt-1 text-sm sm:text-base opacity-90 font-semibold">Menebarkan Islam dengan santun dan damai melalui khotbah, tabligh, dan dakwah.</p>
+              <p class="mt-3 text-sm sm:text-base leading-relaxed">
+                <strong>Tujuan:</strong> kamu berlatih membedakan khotbah, tabligh, dan dakwah, serta memilih cara menyampaikan kebaikan yang bijak, santun, dan menghormati orang lain — dengan cara memecahkan balon jawaban yang benar.
+              </p>
+
+              <div class="mt-4 grid sm:grid-cols-2 gap-2 text-sm">
+                <div class="rounded-2xl p-3" style="background:rgba(253,246,231,.08);border:1px solid rgba(253,246,231,.18)">
+                  <p class="font-bold mb-1">✋ Gestur tangan (mode kamera)</p>
+                  <ul class="space-y-1 opacity-95 text-[13px] leading-snug">
+                    <li><strong>Telapak terbuka</strong> → mulai / lanjutkan permainan</li>
+                    <li><strong>Telunjuk menunjuk</strong> → sorot balon jawaban</li>
+                    <li><strong>Pinch</strong> (ibu jari + telunjuk rapat) → pecahkan balon</li>
+                    <li><strong>Kepalan</strong> → jeda permainan</li>
+                  </ul>
+                </div>
+                <div class="rounded-2xl p-3" style="background:rgba(253,246,231,.08);border:1px solid rgba(253,246,231,.18)">
+                  <p class="font-bold mb-1">🖱️ Tanpa kamera juga bisa</p>
+                  <ul class="space-y-1 opacity-95 text-[13px] leading-snug">
+                    <li>Klik atau ketuk balon jawaban</li>
+                    <li>Tekan tombol angka <strong>1–4</strong></li>
+                    <li>Panah ⯇ ⯈ untuk menyorot, <strong>Enter</strong> untuk memilih</li>
+                    <li>Tersedia <strong>Mode tombol</strong> berisi teks pilihan</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="mt-4 flex flex-wrap gap-2">
+                <button class="btn btn-primary !px-5 !py-3 !text-base" id="btnStartCam">📷 Mulai dengan kamera</button>
+                <button class="btn btn-teal !px-5 !py-3 !text-base" id="btnStartManual">▶️ Main tanpa kamera</button>
+              </div>
+              <p class="mt-2 text-[11px] sm:text-xs opacity-75">
+                Kamera hanya diminta setelah kamu menekan tombol, membutuhkan HTTPS atau localhost, dan video <strong>tidak dikirim ke mana pun</strong> (semua diproses di perangkatmu). Tampilan AR ini adalah overlay di layar, bukan pelacakan ruangan.
+              </p>
+              <div id="openingMsg" class="mt-3 text-sm rounded-2xl p-3 hidden" style="background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.5)"></div>
+            </div>
+
+            <div class="w-full lg:w-72 shrink-0">
+              <div class="rounded-3xl p-4 text-center" style="background:linear-gradient(160deg, rgba(25,211,189,.18), rgba(240,180,60,.12));border:1px solid rgba(255,210,120,.35)">
+                <p class="text-5xl mb-1" aria-hidden="true">🎈</p>
+                <p class="font-extrabold">5 Soal • Skor maksimal 50</p>
+                <p class="text-[13px] opacity-90 mt-1">Setiap jawaban benar bernilai +10. Jawaban yang belum tepat tidak mengurangi skor — kamu tetap mendapat pembahasan untuk belajar.</p>
+                <hr class="my-3 border-white/20">
+                <p class="text-[12px] leading-relaxed opacity-90 text-left">
+                  <strong>Nilai utama:</strong> Q.S. an-Nahl [16]:125 mengajarkan berdakwah dengan <em>hikmah</em>, pengajaran yang baik, dan dialog dengan cara terbaik. Tidak ada paksaan, hinaan, atau perundungan dalam menyampaikan kebaikan.
+                </p>
+              </div>
+              <p class="text-[11px] opacity-70 mt-2 text-center" id="webglNote"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== LOADING KAMERA ===================== -->
+    <div class="screen hidden" id="screenLoading" style="background:rgba(4,37,42,.72)">
+      <div class="m-auto text-center p-6 glass rounded-3xl max-w-md mx-3">
+        <div class="text-5xl mb-3" aria-hidden="true">📷</div>
+        <h2 class="text-xl font-extrabold">Menyiapkan kamera…</h2>
+        <p class="mt-2 text-sm opacity-90" id="loadingMsg">Mohon izinkan akses kamera pada peramban. Model deteksi tangan sedang dimuat dari CDN.</p>
+        <div class="mt-4 flex gap-2 justify-center flex-wrap">
+          <button class="btn btn-teal" id="btnSkipCam">Lanjut tanpa kamera</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== PAUSE ===================== -->
+    <div class="screen hidden" id="screenPause" style="background:rgba(4,37,42,.78)">
+      <div class="m-auto text-center p-6 glass rounded-3xl max-w-md mx-3">
+        <div class="text-5xl mb-2" aria-hidden="true">⏸️</div>
+        <h2 class="text-2xl font-extrabold">Permainan Dijeda</h2>
+        <p class="mt-2 text-sm opacity-90">Buka telapak tangan di depan kamera atau tekan tombol di bawah untuk melanjutkan.</p>
+        <div class="mt-4 flex gap-2 justify-center flex-wrap">
+          <button class="btn btn-primary !px-5 !py-3" id="btnResume">▶️ Lanjutkan</button>
+          <button class="btn" id="btnRestartPause">🔄 Ulang dari awal</button>
+          <button class="btn" id="btnHomePause">🏠 Menu awal</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== FEEDBACK ===================== -->
+    <div class="screen hidden" id="screenFeedback" style="background:rgba(4,37,42,.55)">
+      <div class="mt-auto mb-auto w-full max-w-2xl mx-3 sm:mx-auto">
+        <div class="glass rounded-3xl p-4 sm:p-5 fade-in" role="dialog" aria-modal="true" aria-labelledby="fbTitle">
+          <div class="flex items-start gap-3">
+            <div id="fbIcon" class="text-4xl" aria-hidden="true">✅</div>
+            <div class="min-w-0 flex-1">
+              <h2 id="fbTitle" class="text-xl font-extrabold">Jawaban Benar!</h2>
+              <p id="fbPoints" class="text-sm font-bold" style="color:var(--gold-2)">+10 poin</p>
+            </div>
+          </div>
+          <div class="mt-3 rounded-2xl p-3 text-sm" style="background:rgba(25,211,189,.14);border:1px solid rgba(25,211,189,.4)">
+            <p class="font-bold mb-1">Jawaban tepat:</p>
+            <p id="fbCorrect" class="leading-snug"></p>
+          </div>
+          <div class="mt-2 rounded-2xl p-3 text-sm" style="background:rgba(253,246,231,.08);border:1px solid rgba(253,246,231,.2)">
+            <p class="font-bold mb-1">💡 Pembahasan</p>
+            <p id="fbExpl" class="leading-relaxed"></p>
+          </div>
+          <div class="mt-3 flex justify-end">
+            <button class="btn btn-primary !px-6 !py-3 !text-base" id="btnNext">Lanjut ➡️</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== HASIL ===================== -->
+    <div class="screen hidden" id="screenResult" style="background:rgba(4,37,42,.72)">
+      <div class="m-auto w-full max-w-2xl p-3">
+        <div class="glass rounded-3xl p-5 sm:p-7 text-center fade-in">
+          <div class="text-6xl mb-1" id="resIcon" aria-hidden="true">🏆</div>
+          <h2 class="text-2xl sm:text-3xl font-black">Misi Selesai!</h2>
+          <p class="opacity-85 text-sm">SANTUN: Misi Dakwah Damai</p>
+          <div class="mt-4 inline-block rounded-3xl px-7 py-4" style="background:linear-gradient(160deg, rgba(240,180,60,.25), rgba(25,211,189,.18));border:1px solid rgba(255,210,120,.45)">
+            <p class="text-sm font-bold opacity-85">Total Skor</p>
+            <p class="text-5xl font-black" style="color:var(--gold-2)"><span id="resScore">0</span><span class="text-2xl opacity-70">/50</span></p>
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-2 max-w-sm mx-auto">
+            <div class="rounded-2xl p-3" style="background:rgba(52,211,153,.16);border:1px solid rgba(52,211,153,.4)">
+              <p class="text-2xl font-black" id="resRight">0</p><p class="text-xs font-bold">Jawaban benar</p>
+            </div>
+            <div class="rounded-2xl p-3" style="background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.4)">
+              <p class="text-2xl font-black" id="resWrong">0</p><p class="text-xs font-bold">Belum tepat</p>
+            </div>
+          </div>
+          <p class="mt-4 text-sm sm:text-base leading-relaxed" id="resMsg"></p>
+          <div class="mt-5 flex gap-2 justify-center flex-wrap">
+            <button class="btn btn-primary !px-6 !py-3 !text-base" id="btnPlayAgain">🔄 Main lagi</button>
+            <button class="btn !px-5 !py-3" id="btnHomeResult">🏠 Menu awal</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sr-only" aria-live="assertive" id="srLive"></div>
+
+<script type="module">
+/* =========================================================================
+   SANTUN: Misi Dakwah Damai — Adventure AR Game
+   Semua objek 3D dibuat prosedural dengan Three.js. Tanpa aset eksternal.
+   ========================================================================= */
+
+let THREE = null;
+let has3D = false;
+
+/* ----------------------------- DATA SOAL ------------------------------- */
+const QUESTIONS = [
+  {
+    q: "Rafi diminta menyampaikan khotbah Jumat. Pernyataan yang paling tepat tentang perbedaannya dari tabligh atau ceramah umum adalah ...",
+    options: [
+      "Khotbah Jumat mempunyai ketentuan dan tata pelaksanaan khusus dalam fikih; tabligh umum tidak otomatis memakai format khotbah Jumat.",
+      "Semua tabligh wajib dilakukan di masjid.",
+      "Khotbah adalah percakapan bebas tanpa konteks atau ketentuan.",
+      "Khotbah dan semua bentuk tabligh harus memiliki durasi yang sama."
+    ],
+    correct: 0,
+    expl: "Khotbah Jumat memiliki konteks dan ketentuan pelaksanaan khusus. Tabligh berarti menyampaikan ajaran, sehingga bentuk dan situasinya dapat beragam. Khotbah juga dapat menjadi sarana penyampaian pesan."
+  },
+  {
+    q: "Makna tabligh yang paling tepat ialah ...",
+    options: [
+      "Mengajak orang lain dengan paksaan agar segera mengikuti pendapat kita.",
+      "Menyampaikan ajaran atau nilai Islam secara jelas dan bertanggung jawab.",
+      "Menyampaikan pesan yang hanya boleh dilakukan di masjid.",
+      "Mengganti semua bentuk dakwah dengan satu jenis pidato."
+    ],
+    correct: 1,
+    expl: "Tabligh menekankan penyampaian pesan atau ajaran. Cara dan konteks penyampaiannya perlu memperhatikan kebenaran isi, kejelasan, dan adab."
+  },
+  {
+    q: "Seorang pelajar membiasakan diri bersikap jujur, menjaga kebersihan, dan menolong warga sehingga perilaku baik itu menjadi teladan. Contoh dakwah apakah ini?",
+    options: [
+      "Dakwah bil hal, yaitu mengajak kepada kebaikan melalui tindakan dan keteladanan.",
+      "Khotbah Jumat, karena setiap tindakan baik adalah khotbah.",
+      "Perdebatan, karena teladan harus memenangkan lawan bicara.",
+      "Tabligh lisan saja, karena pesan hanya dapat disampaikan melalui pidato."
+    ],
+    correct: 0,
+    expl: "Dakwah bil hal dilakukan lewat tindakan nyata dan akhlak yang baik. Keteladanan dapat menyampaikan nilai tanpa memaksa orang lain."
+  },
+  {
+    q: "Prinsip dakwah yang dapat dipetik dari Q.S. an-Nahl [16]:125 adalah ...",
+    options: [
+      "Memaksa orang lain menerima pesan secepat mungkin.",
+      "Menyerang pribadi orang yang memiliki pertanyaan.",
+      "Menyampaikan dengan hikmah, pengajaran yang baik, dan dialog dengan cara terbaik.",
+      "Menolak semua pertanyaan atau perbedaan pendapat."
+    ],
+    correct: 2,
+    expl: "Ayat tersebut mengajarkan hikmah, nasihat yang baik, serta dialog dengan cara yang terbaik. Prinsip ini mendorong penyampaian pesan secara bijak dan santun."
+  },
+  {
+    q: "Pesan baik yang kamu sampaikan di grup daring tidak disetujui teman. Tindakan paling santun adalah ...",
+    options: [
+      "Mempermalukannya di depan anggota grup lain.",
+      "Mengirim pesan yang sama berulang kali sampai ia menyerah.",
+      "Mengancam agar ia mengikuti pendapatmu.",
+      "Menanggapi dengan tenang, mendengarkan, memakai sumber tepercaya bila relevan, dan menghormati batas serta perbedaan."
+    ],
+    correct: 3,
+    expl: "Dakwah yang damai tidak menggunakan tekanan atau mempermalukan orang. Dengarkan tanggapan, sampaikan informasi dengan bertanggung jawab, dan hormati orang lain."
+  }
+];
+const POINTS_PER_CORRECT = 10;
+const MAX_SCORE = QUESTIONS.length * POINTS_PER_CORRECT;
+
+/* --------------------------- STATE APLIKASI ---------------------------- */
+const State = {
+  OPENING: 'opening', LOADING: 'loading', PLAYING: 'playing',
+  PAUSED: 'paused', FEEDBACK: 'feedback', RESULT: 'result'
+};
+const game = {
+  state: State.OPENING,
+  index: 0,
+  score: 0,
+  right: 0,
+  wrong: 0,
+  answered: false,
+  order: [0,1,2,3],      // urutan tampilan pilihan pada balon
+  correctSlot: 0,        // slot balon yang benar
+  hovered: -1,
+  cameraMode: false,
+  muted: false,
+  prevState: State.PLAYING
+};
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ------------------------------ ELEMEN DOM ----------------------------- */
+const $ = (id) => document.getElementById(id);
+const el = {
+  stage: $('stage'), canvas: $('glcanvas'), video: $('camVideo'), cursor: $('cursorDot'),
+  playUI: $('playUI'),
+  scOpening: $('screenOpening'), scLoading: $('screenLoading'), scPause: $('screenPause'),
+  scFeedback: $('screenFeedback'), scResult: $('screenResult'),
+  chipQ: $('chipQ'), chipScore: $('chipScore'), chipRight: $('chipRight'), chipWrong: $('chipWrong'),
+  progressBar: $('progressBar'), progressFill: $('progressFill'),
+  qText: $('qText'), optPanel: $('optPanel'), btnToggleOpts: $('btnToggleOpts'),
+  camStatus: $('camStatus'), camDot: $('camDot'), gestureChip: $('gestureChip'),
+  fbIcon: $('fbIcon'), fbTitle: $('fbTitle'), fbPoints: $('fbPoints'), fbCorrect: $('fbCorrect'), fbExpl: $('fbExpl'),
+  resScore: $('resScore'), resRight: $('resRight'), resWrong: $('resWrong'), resMsg: $('resMsg'), resIcon: $('resIcon'),
+  openingMsg: $('openingMsg'), loadingMsg: $('loadingMsg'), webglNote: $('webglNote'),
+  srLive: $('srLive')
+};
+
+function say(msg){ el.srLive.textContent = ''; setTimeout(()=>{ el.srLive.textContent = msg; }, 60); }
+
+/* ------------------------------- AUDIO --------------------------------- */
+const sound = {
+  ctx: null, ok: true,
+  init(){
+    if (this.ctx || !this.ok) return;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) { this.ok = false; return; }
+      this.ctx = new AC();
+    } catch(e){ this.ok = false; }
+  },
+  resume(){ try { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); } catch(e){} },
+  tone(freq, dur, type='sine', vol=0.16, slideTo=null){
+    if (game.muted || !this.ok) return;
+    this.init(); if (!this.ctx) return; this.resume();
+    try{
+      const t = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      osc.type = type; osc.frequency.setValueAtTime(freq, t);
+      if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(g).connect(this.ctx.destination);
+      osc.start(t); osc.stop(t + dur + 0.03);
+    }catch(e){}
+  },
+  pop(){ this.tone(680, 0.14, 'triangle', 0.22, 160); },
+  hover(){ this.tone(900, 0.05, 'sine', 0.05); },
+  correct(){ this.tone(660,0.12,'sine',0.14); setTimeout(()=>this.tone(880,0.14,'sine',0.14),110); setTimeout(()=>this.tone(1175,0.22,'sine',0.13),230); },
+  wrong(){ this.tone(300,0.20,'sawtooth',0.10,200); },
+  finish(){ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>this.tone(f,0.25,'sine',0.14),i*140)); }
+};
+
+/* ============================ THREE.JS SETUP =========================== */
+let renderer, scene, camera3, clock, raycaster, pointerNDC;
+let balloons = [], decor = null, bursts = [], particles = null;
+let decorMode = 'intro';
+const BALLOON_COLORS = [0x19d3bd, 0xf0b43c, 0xff8c6b, 0x8ab6ff];
+const BALLOON_LETTERS = ['1','2','3','4'];
+
+async function initThree(){
+  try{
+    THREE = await import('three');
+  }catch(e){
+    showWebGLFallback('Pustaka 3D tidak dapat dimuat dari CDN. Permainan tetap bisa dimainkan dengan Mode tombol.');
+    return false;
+  }
+  try{
+    renderer = new THREE.WebGLRenderer({ canvas: el.canvas, alpha:true, antialias:true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+  }catch(e){
+    showWebGLFallback('WebGL tidak tersedia pada perangkat ini. Permainan tetap bisa dimainkan dengan Mode tombol.');
+    return false;
+  }
+  scene = new THREE.Scene();
+  camera3 = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera3.position.set(0, 0, 9);
+  clock = new THREE.Clock();
+  raycaster = new THREE.Raycaster();
+  pointerNDC = new THREE.Vector2(-10,-10);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+  const key = new THREE.DirectionalLight(0xfff0d0, 1.05); key.position.set(4,7,8); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x4ff0d8, 0.6); rim.position.set(-6,2,4); scene.add(rim);
+  const warm = new THREE.PointLight(0xf0b43c, 1.1, 30); warm.position.set(0,-2,5); scene.add(warm);
+
+  decor = buildDecor();
+  scene.add(decor);
+  particles = buildParticles();
+  scene.add(particles);
+
+  for (let i=0;i<4;i++){
+    const b = buildBalloon(i, BALLOON_COLORS[i]);
+    b.visible = false;
+    balloons.push(b);
+    scene.add(b);
+  }
+  has3D = true;
+  layoutBalloons();
+  animate();
+  return true;
+}
+
+function showWebGLFallback(msg){
+  has3D = false;
+  el.canvas.style.display = 'none';
+  el.webglNote.textContent = '⚠️ ' + msg;
+  openOptionsPanel(true);
+}
+
+/* --------------------------- OBJEK PROSEDURAL -------------------------- */
+function mat(color, opts={}){
+  return new THREE.MeshPhongMaterial(Object.assign({ color, shininess: 45, specular: 0x333333 }, opts));
+}
+
+function buildDecor(){
+  const g = new THREE.Group();
+
+  /* --- MIMBAR (simbol konteks khotbah) --- */
+  const mimbar = new THREE.Group();
+  const wood = mat(0xb07a3c), woodDark = mat(0x8a5a28), trim = mat(0x0f8f86), gold = mat(0xf0b43c, {emissive:0x6b4c08, shininess:90});
+  const base = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.26, 1.25), woodDark); base.position.y = -1.25; mimbar.add(base);
+  const step = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.2, 1.0), wood); step.position.y = -1.02; mimbar.add(step);
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.42, 1.4, 16), wood); pillar.position.y = -0.22; mimbar.add(pillar);
+  const deskTop = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.16, 1.05), wood); deskTop.position.y = 0.55; deskTop.rotation.x = -0.22; mimbar.add(deskTop);
+  const front = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.75, 0.12), trim); front.position.set(0, 0.18, 0.5); mimbar.add(front);
+  const frontGold = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.05, 10, 24), gold); frontGold.position.set(0, 0.2, 0.58); mimbar.add(frontGold);
+  for (const sx of [-1,1]){
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.8,10), gold);
+    post.position.set(sx*0.88, 0.9, 0.35); mimbar.add(post);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 12), gold);
+    knob.position.set(sx*0.88, 1.33, 0.35); mimbar.add(knob);
+  }
+  mimbar.position.set(0, -0.55, 0);
+  mimbar.scale.setScalar(0.95);
+  g.add(mimbar);
+
+  /* --- BUKU / GULUNGAN PESAN (simbol tabligh) --- */
+  const book = new THREE.Group();
+  const cover = mat(0x0f6e6b);
+  const page = new THREE.MeshPhongMaterial({ color: 0xfdf6e7, shininess: 20 });
+  const left = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.09, 0.78), cover);
+  const right = left.clone();
+  left.position.set(-0.52, 0, 0); left.rotation.z = 0.20;
+  right.position.set(0.52, 0, 0); right.rotation.z = -0.20;
+  const pL = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.05, 0.70), page);
+  const pR = pL.clone();
+  pL.position.set(-0.50, 0.08, 0); pL.rotation.z = 0.20;
+  pR.position.set(0.50, 0.08, 0); pR.rotation.z = -0.20;
+  const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.78,10), mat(0xf0b43c, {emissive:0x5c3f05}));
+  spine.rotation.x = Math.PI/2;
+  book.add(left,right,pL,pR,spine);
+  // gulungan pesan
+  const scroll = new THREE.Group();
+  const paper = new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.17,1.1,18), page);
+  paper.rotation.z = Math.PI/2;
+  const r1 = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1.3,12), mat(0xb07a3c));
+  r1.rotation.z = Math.PI/2;
+  scroll.add(paper, r1);
+  scroll.position.set(0.1, -0.55, 0.1); scroll.rotation.z = 0.25;
+  book.add(scroll);
+  book.position.set(-2.9, 0.55, 0.2);
+  book.scale.setScalar(0.95);
+  book.userData.spin = true;
+  g.add(book);
+
+  /* --- JALUR CAHAYA + LENTERA (simbol perjalanan dakwah) --- */
+  const pathGroup = new THREE.Group();
+  const pts = [];
+  for (let i=0;i<=40;i++){
+    const t = i/40;
+    pts.push(new THREE.Vector3(-3.6 + t*7.2, -1.6 + Math.sin(t*Math.PI*1.6)*0.85, -0.6 + Math.cos(t*Math.PI)*0.5));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const tube = new THREE.Mesh(
+    new THREE.TubeGeometry(curve, 80, 0.045, 8, false),
+    new THREE.MeshBasicMaterial({ color: 0x7ef7dd, transparent:true, opacity:0.55 })
+  );
+  pathGroup.add(tube);
+  const lanterns = [];
+  for (let i=0;i<6;i++){
+    const t = 0.07 + i*0.172;
+    const p = curve.getPoint(t);
+    const lan = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), new THREE.MeshPhongMaterial({
+      color: 0xffd278, emissive: 0xf0b43c, emissiveIntensity: 0.8, transparent:true, opacity:0.95, shininess:80
+    }));
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.1,10), mat(0x8a5a28));
+    cap.position.y = 0.26;
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.36, 14, 12), new THREE.MeshBasicMaterial({
+      color: 0xffd278, transparent:true, opacity:0.14
+    }));
+    lan.add(body, cap, halo);
+    lan.position.copy(p);
+    lan.userData.phase = i * 0.7;
+    lan.userData.baseY = p.y;
+    lanterns.push(lan);
+    pathGroup.add(lan);
+  }
+  pathGroup.userData.lanterns = lanterns;
+  pathGroup.position.set(0.2, 0.1, 0);
+  g.add(pathGroup);
+
+  g.userData = { book, pathGroup, mimbar };
+  return g;
+}
+
+function buildParticles(){
+  const n = reduceMotion ? 50 : 150;
+  const pos = new Float32Array(n*3);
+  const spd = [];
+  for (let i=0;i<n;i++){
+    pos[i*3]   = (Math.random()-0.5)*18;
+    pos[i*3+1] = (Math.random()-0.5)*12;
+    pos[i*3+2] = (Math.random()-0.5)*7 - 1;
+    spd.push(0.12 + Math.random()*0.3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const m = new THREE.PointsMaterial({ color: 0xffe3a8, size: 0.075, transparent:true, opacity:0.65, depthWrite:false });
+  const p = new THREE.Points(geo, m);
+  p.userData.spd = spd;
+  return p;
+}
+
+/* ------------------------- LABEL CANVAS TEXTURE ------------------------ */
+function makeLabelTexture(letter, text, colorHex){
+  const W = 760, H = 580;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+
+  // kartu teks kontras tinggi
+  const pad = 26, r = 46;
+  x.clearRect(0,0,W,H);
+  roundRect(x, pad, pad, W-pad*2, H-pad*2, r);
+  x.fillStyle = 'rgba(6,34,38,0.93)'; x.fill();
+  x.lineWidth = 12; x.strokeStyle = '#' + colorHex.toString(16).padStart(6,'0'); x.stroke();
+  roundRect(x, pad+14, pad+14, W-(pad+14)*2, H-(pad+14)*2, r-14);
+  x.lineWidth = 4; x.strokeStyle = 'rgba(253,246,231,0.45)'; x.stroke();
+
+  // badge nomor
+  x.beginPath(); x.arc(pad+76, pad+76, 46, 0, Math.PI*2);
+  x.fillStyle = '#' + colorHex.toString(16).padStart(6,'0'); x.fill();
+  x.fillStyle = '#04252a'; x.font = '900 56px Segoe UI, Arial, sans-serif';
+  x.textAlign='center'; x.textBaseline='middle';
+  x.fillText(letter, pad+76, pad+80);
+
+  // teks pilihan (auto-fit)
+  const boxX = pad+34, boxW = W - (pad+34)*2;
+  const topY = pad + 148, boxH = H - topY - pad - 30;
+  let fs = 46, lines = [];
+  while (fs > 20){
+    x.font = '700 ' + fs + 'px Segoe UI, Arial, sans-serif';
+    lines = wrapText(x, text, boxW);
+    if (lines.length * (fs*1.22) <= boxH) break;
+    fs -= 2;
+  }
+  x.font = '700 ' + fs + 'px Segoe UI, Arial, sans-serif';
+  x.textAlign = 'center'; x.textBaseline = 'top';
+  const lh = fs*1.22;
+  const startY = topY + Math.max(0, (boxH - lines.length*lh)/2);
+  x.shadowColor = 'rgba(0,0,0,.85)'; x.shadowBlur = 10;
+  x.fillStyle = '#ffffff';
+  lines.forEach((ln,i)=> x.fillText(ln, W/2, startY + i*lh));
+  x.shadowBlur = 0;
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 4;
+  if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+function roundRect(x, px, py, w, h, r){
+  x.beginPath();
+  x.moveTo(px+r, py);
+  x.arcTo(px+w, py, px+w, py+h, r);
+  x.arcTo(px+w, py+h, px, py+h, r);
+  x.arcTo(px, py+h, px, py, r);
+  x.arcTo(px, py, px+w, py, r);
+  x.closePath();
+}
+function wrapText(ctx, text, maxW){
+  const words = String(text).split(/\s+/);
+  const out = []; let line = '';
+  for (const w of words){
+    const t = line ? line + ' ' + w : w;
+    if (ctx.measureText(t).width > maxW && line){ out.push(line); line = w; }
+    else line = t;
+  }
+  if (line) out.push(line);
+  return out;
+}
+
+/* ------------------------------ BALON 3D ------------------------------- */
+function buildBalloon(i, color){
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshPhongMaterial({
+    color, shininess: 90, specular: 0x9affee, transparent: true, opacity: 0.93
+  });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 28), bodyMat);
+  body.scale.set(1.34, 1.42, 1.1);
+  body.userData.isBalloon = true;
+  g.add(body);
+
+  const knot = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.3, 12), bodyMat);
+  knot.position.y = -1.5; knot.rotation.x = Math.PI; g.add(knot);
+
+  const string = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.25, 6), new THREE.MeshBasicMaterial({ color: 0xfdf6e7, transparent:true, opacity:0.75 }));
+  string.position.y = -2.25; g.add(string);
+
+  const shine = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 12), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.45 }));
+  shine.position.set(-0.55, 0.78, 0.72); g.add(shine);
+
+  const labelGeo = new THREE.PlaneGeometry(1.86, 1.42);
+  const labelMat = new THREE.MeshBasicMaterial({ transparent:true, depthWrite:false });
+  const label = new THREE.Mesh(labelGeo, labelMat);
+  label.position.set(0, 0.08, 1.06);
+  label.userData.isBalloon = true;
+  g.add(label);
+
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.55, 0.055, 10, 42), new THREE.MeshBasicMaterial({ color: 0xffd278, transparent:true, opacity:0 }));
+  ring.position.z = 0.9; ring.scale.set(1, 1.06, 1);
+  g.add(ring);
+
+  g.userData = {
+    index: i, body, label, labelMat, ring, bodyMat, color,
+    phase: Math.random()*Math.PI*2, baseY: 0, popping: false, popT: 0, dim: false, hovered: false
+  };
+  return g;
+}
+
+function setBalloonLabel(slot, letter, text){
+  if (!has3D) return;
+  const b = balloons[slot];
+  const old = b.userData.labelMat.map;
+  b.userData.labelMat.map = makeLabelTexture(letter, text, b.userData.color);
+  b.userData.labelMat.needsUpdate = true;
+  if (old) old.dispose();
+}
+
+function layoutBalloons(){
+  if (!has3D || !camera3) return;
+  const dist = camera3.position.z;
+  const vH = 2 * Math.tan((camera3.fov * Math.PI/180)/2) * dist;
+  const vW = vH * camera3.aspect;
+  const portrait = window.innerWidth < 900;
+
+  // ruang vertikal yang aman (menghindari header, panel soal, dan footer)
+  const usableH = vH * (portrait ? 0.50 : 0.56);
+  const centerY = -vH * (portrait ? 0.06 : 0.04);
+
+  let cols = portrait ? 2 : 4;
+  let rows = portrait ? 2 : 1;
+  const cellW = (vW * 0.94) / cols;
+  const cellH = usableH / rows;
+  const natW = 2.9, natH = 3.4;
+  const scale = Math.min(cellW / natW, cellH / natH, 1.25);
+
+  for (let i=0;i<4;i++){
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = (col - (cols-1)/2) * cellW;
+    const y = centerY - (row - (rows-1)/2) * cellH + (portrait ? 0 : (i%2 ? -0.25 : 0.25));
+    const b = balloons[i];
+    b.position.set(x, y, 0);
+    b.userData.baseY = y;
+    b.scale.setScalar(scale);
+    b.userData.scale = scale;
+  }
+}
+
+/* ---------------------------- EFEK PECAH ------------------------------- */
+function popBalloon(slot, correct){
+  if (!has3D) return;
+  const b = balloons[slot];
+  b.userData.popping = true;
+  b.userData.popT = 0;
+  spawnBurst(b.position.clone(), correct ? 0x7ef7dd : 0xffd278, b.userData.scale || 1);
+}
+function spawnBurst(pos, color, scale){
+  if (!has3D) return;
+  const n = reduceMotion ? 26 : 70;
+  const positions = new Float32Array(n*3);
+  const vel = [];
+  for (let i=0;i<n;i++){
+    positions[i*3] = pos.x; positions[i*3+1] = pos.y; positions[i*3+2] = pos.z;
+    const a = Math.random()*Math.PI*2, b = (Math.random()-0.5)*Math.PI;
+    const s = (1.6 + Math.random()*3.2) * scale;
+    vel.push(new THREE.Vector3(Math.cos(a)*Math.cos(b)*s, Math.sin(b)*s + 1.4, Math.sin(a)*Math.cos(b)*s*0.6));
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  const m = new THREE.PointsMaterial({ color, size: 0.19*scale, transparent:true, opacity:1, depthWrite:false });
+  const pts = new THREE.Points(geo, m);
+  pts.userData = { vel, life: 0, max: 0.95 };
+  scene.add(pts);
+  bursts.push(pts);
+}
+
+/* ------------------------------ ANIMASI -------------------------------- */
+function animate(){
+  requestAnimationFrame(animate);
+  if (!has3D) return;
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+  const anim = !reduceMotion;
+
+  // dekor
+  if (decor){
+    const target = (decorMode === 'intro')
+      ? { s: 1.0, y: -0.15, z: 0 }
+      : { s: 0.46, y: -3.05, z: -2.6 };
+    decor.scale.lerp(new THREE.Vector3(target.s,target.s,target.s), 0.06);
+    decor.position.y += (target.y - decor.position.y) * 0.06;
+    decor.position.z += (target.z - decor.position.z) * 0.06;
+    if (anim){
+      decor.rotation.y = Math.sin(t*0.26) * (decorMode==='intro' ? 0.22 : 0.10);
+      const bk = decor.userData.book;
+      bk.rotation.y = t*0.45; bk.position.y = 0.55 + Math.sin(t*1.1)*0.14;
+      decor.userData.pathGroup.userData.lanterns.forEach((l,i)=>{
+        l.position.y = l.userData.baseY + Math.sin(t*1.3 + l.userData.phase)*0.16;
+        l.rotation.y = t*0.8 + i;
+      });
+    }
+  }
+
+  // partikel latar
+  if (particles && anim){
+    const p = particles.geometry.attributes.position;
+    for (let i=0;i<p.count;i++){
+      let y = p.getY(i) + particles.userData.spd[i]*dt;
+      if (y > 6.5) y = -6.5;
+      p.setY(i, y);
+      p.setX(i, p.getX(i) + Math.sin(t*0.6 + i)*0.0025);
+    }
+    p.needsUpdate = true;
+  }
+
+  // balon
+  for (const b of balloons){
+    const u = b.userData;
+    if (!b.visible) continue;
+    if (u.popping){
+      u.popT += dt*3.4;
+      const k = Math.max(0, 1 - u.popT);
+      const s = (u.scale||1) * (u.popT < 0.25 ? 1 + u.popT*1.4 : k*1.3);
+      b.scale.setScalar(Math.max(0.0001, s));
+      u.labelMat.opacity = Math.max(0, k);
+      u.bodyMat.opacity = Math.max(0, k*0.93);
+      if (u.popT >= 1){ b.visible = false; u.popping = false; }
+      continue;
+    }
+    if (anim){
+      b.position.y = u.baseY + Math.sin(t*1.25 + u.phase)*0.16;
+      b.rotation.z = Math.sin(t*0.9 + u.phase)*0.045;
+    }
+    const want = (u.hovered ? 1.1 : 1) * (u.scale||1);
+    b.scale.setScalar(b.scale.x + (want - b.scale.x)*0.18);
+    u.ring.material.opacity += ((u.hovered ? 0.95 : 0) - u.ring.material.opacity)*0.2;
+    const targetOp = u.dim ? 0.3 : 0.93;
+    u.bodyMat.opacity += (targetOp - u.bodyMat.opacity)*0.12;
+    u.labelMat.opacity += ((u.dim?0.35:1) - u.labelMat.opacity)*0.12;
+  }
+
+  // ledakan partikel
+  for (let i=bursts.length-1;i>=0;i--){
+    const b = bursts[i];
+    b.userData.life += dt;
+    const p = b.geometry.attributes.position;
+    for (let j=0;j<p.count;j++){
+      const v = b.userData.vel[j];
+      p.setXYZ(j, p.getX(j)+v.x*dt, p.getY(j)+v.y*dt, p.getZ(j)+v.z*dt);
+      v.y -= 4.2*dt;
+    }
+    p.needsUpdate = true;
+    b.material.opacity = Math.max(0, 1 - b.userData.life/b.userData.max);
+    if (b.userData.life >= b.userData.max){
+      scene.remove(b); b.geometry.dispose(); b.material.dispose(); bursts.splice(i,1);
+    }
+  }
+
+  renderer.render(scene, camera3);
+}
+
+function onResize(){
+  if (has3D && renderer && camera3){
+    const w = window.innerWidth, h = window.innerHeight;
+    camera3.aspect = w/h; camera3.updateProjectionMatrix();
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(w, h, false);
+    layoutBalloons();
+  }
+}
+window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', ()=> setTimeout(onResize, 350));
+
+/* ========================== LOGIKA PERMAINAN =========================== */
+function setState(s){
+  game.state = s;
+  el.scOpening.classList.toggle('hidden', s !== State.OPENING);
+  el.scLoading.classList.toggle('hidden', s !== State.LOADING);
+  el.scPause.classList.toggle('hidden', s !== State.PAUSED);
+  el.scFeedback.classList.toggle('hidden', s !== State.FEEDBACK);
+  el.scResult.classList.toggle('hidden', s !== State.RESULT);
+  const showPlay = (s === State.PLAYING || s === State.FEEDBACK || s === State.PAUSED);
+  el.playUI.style.display = showPlay ? 'flex' : 'none';
+  decorMode = (s === State.OPENING || s === State.LOADING) ? 'intro' : 'play';
+  if (s === State.OPENING || s === State.LOADING || s === State.RESULT) hideBalloons();
+  updateCursorVisibility();
+}
+function hideBalloons(){
+  if (!has3D) return;
+  balloons.forEach(b => { b.visible = false; b.userData.hovered = false; });
+}
+
+function shuffle(arr){
+  const a = arr.slice();
+  for (let i=a.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; }
+  return a;
+}
+
+function startGame(){
+  game.index = 0; game.score = 0; game.right = 0; game.wrong = 0;
+  bursts.forEach(b=>scene && scene.remove(b)); bursts = [];
+  setState(State.PLAYING);
+  loadQuestion();
+}
+
+function loadQuestion(){
+  const q = QUESTIONS[game.index];
+  if (!q || game.index >= QUESTIONS.length){ showResult(); return; }
+  game.answered = false;
+  game.hovered = -1;
+  game.order = shuffle([0,1,2,3]);
+  game.correctSlot = game.order.indexOf(q.correct);
+
+  el.qText.textContent = q.q;
+  el.chipQ.textContent = `Soal ${game.index+1}/${QUESTIONS.length}`;
+  updateHUD();
+
+  // balon
+  if (has3D){
+    layoutBalloons();
+    balloons.forEach((b, slot) => {
+      const u = b.userData;
+      u.popping = false; u.popT = 0; u.dim = false; u.hovered = false;
+      u.bodyMat.opacity = 0.93;
+      u.labelMat.opacity = 1;
+      u.ring.material.opacity = 0;
+      b.visible = true;
+      b.scale.setScalar(u.scale || 1);
+      setBalloonLabel(slot, BALLOON_LETTERS[slot], q.options[game.order[slot]]);
+    });
+  }
+  // panel tombol aksesibel
+  renderOptionButtons(q);
+  say(`Soal ${game.index+1} dari ${QUESTIONS.length}. ${q.q}`);
+}
+
+function renderOptionButtons(q){
+  el.optPanel.innerHTML = '';
+  game.order.forEach((optIdx, slot) => {
+    const btn = document.createElement('button');
+    btn.className = 'opt-btn';
+    btn.type = 'button';
+    btn.setAttribute('data-slot', String(slot));
+    btn.innerHTML = `<span class="opt-key" aria-hidden="true">${slot+1}</span><span>${escapeHtml(q.options[optIdx])}</span>`;
+    btn.setAttribute('aria-label', `Pilihan ${slot+1}: ${q.options[optIdx]}`);
+    btn.addEventListener('click', () => chooseAnswer(slot));
+    btn.addEventListener('mouseenter', () => setHover(slot));
+    btn.addEventListener('focus', () => setHover(slot));
+    el.optPanel.appendChild(btn);
+  });
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function setHover(slot){
+  if (game.state !== State.PLAYING || game.answered) return;
+  if (game.hovered === slot) return;
+  game.hovered = slot;
+  if (has3D) balloons.forEach((b,i)=> b.userData.hovered = (i === slot) && b.visible);
+  if (slot >= 0) sound.hover();
+}
+
+function chooseAnswer(slot){
+  if (game.state !== State.PLAYING || game.answered) return;
+  if (slot < 0 || slot > 3) return;
+  game.answered = true;
+  const q = QUESTIONS[game.index];
+  const isCorrect = (slot === game.correctSlot);
+
+  sound.pop();
+  popBalloon(slot, isCorrect);
+  if (has3D){
+    balloons.forEach((b,i)=>{ b.userData.hovered = false; if (i !== slot) b.userData.dim = true; });
+  }
+  el.optPanel.querySelectorAll('button').forEach(b => b.disabled = true);
+
+  if (isCorrect){ game.score += POINTS_PER_CORRECT; game.right++; }
+  else { game.wrong++; }
+  updateHUD();
+
+  setTimeout(()=>{
+    if (isCorrect) sound.correct(); else sound.wrong();
+    showFeedback(isCorrect, q);
+  }, reduceMotion ? 180 : 620);
+}
+
+function showFeedback(isCorrect, q){
+  el.fbIcon.textContent = isCorrect ? '🎉' : '💡';
+  el.fbTitle.textContent = isCorrect ? 'Jawaban Benar!' : 'Belum Tepat — Ayo Pelajari';
+  el.fbTitle.style.color = isCorrect ? '#7ef7dd' : '#ffd278';
+  el.fbPoints.textContent = isCorrect ? '+10 poin' : '+0 poin (skor tidak dikurangi)';
+  el.fbCorrect.textContent = q.options[q.correct];
+  el.fbExpl.textContent = q.expl;
+  setState(State.FEEDBACK);
+  setTimeout(()=> $('btnNext').focus(), 60);
+  say((isCorrect ? 'Jawaban benar. ' : 'Belum tepat. ') + 'Jawaban tepat: ' + q.options[q.correct] + '. ' + q.expl);
+}
+
+function nextQuestion(){
+  game.index++;
+  if (game.index >= QUESTIONS.length){ showResult(); return; }
+  setState(State.PLAYING);
+  loadQuestion();
+}
+
+function showResult(){
+  hideBalloons();
+  setState(State.RESULT);
+  el.resScore.textContent = game.score;
+  el.resRight.textContent = game.right;
+  el.resWrong.textContent = game.wrong;
+  let msg, icon;
+  if (game.score >= 50){ icon='🏆'; msg='Luar biasa! Kamu memahami perbedaan khotbah, tabligh, dan dakwah serta memilih cara yang santun. Teruskan dengan keteladanan sehari-hari.'; }
+  else if (game.score >= 40){ icon='🌟'; msg='Hebat! Pemahamanmu sudah kuat. Baca ulang satu pembahasan yang terlewat, lalu latih menyampaikan kebaikan dengan bahasa yang lembut.'; }
+  else if (game.score >= 30){ icon='😊'; msg='Bagus! Kamu sudah di jalur yang benar. Perdalam lagi makna hikmah, nasihat yang baik, dan dialog terbaik pada Q.S. an-Nahl [16]:125.'; }
+  else if (game.score >= 20){ icon='📚'; msg='Semangat! Setiap jawaban adalah kesempatan belajar. Ulangi permainan dan perhatikan pembahasan tiap soal, ya.'; }
+  else { icon='🌱'; msg='Tidak apa-apa, belajar itu proses. Baca kembali pembahasannya pelan-pelan, lalu coba lagi. Kamu pasti bisa!'; }
+  el.resIcon.textContent = icon;
+  el.resMsg.textContent = msg;
+  sound.finish();
+  setTimeout(()=> $('btnPlayAgain').focus(), 80);
+  say(`Permainan selesai. Skor ${game.score} dari ${MAX_SCORE}. Benar ${game.right}, belum tepat ${game.wrong}. ${msg}`);
+}
+
+function updateHUD(){
+  el.chipScore.textContent = game.score;
+  el.chipRight.textContent = game.right;
+  el.chipWrong.textContent = game.wrong;
+  const done = game.index + (game.answered ? 1 : 0);
+  el.progressFill.style.width = (done / QUESTIONS.length * 100) + '%';
+  el.progressBar.setAttribute('aria-valuenow', String(done));
+  el.progressBar.setAttribute('aria-valuetext', `${done} dari ${QUESTIONS.length} soal selesai, skor ${game.score} dari ${MAX_SCORE}`);
+}
+
+function pauseGame(){
+  if (game.state !== State.PLAYING && game.state !== State.FEEDBACK) return;
+  game.prevState = game.state;
+  setState(State.PAUSED);
+  setTimeout(()=> $('btnResume').focus(), 60);
+  say('Permainan dijeda.');
+}
+function resumeGame(){
+  if (game.state !== State.PAUSED) return;
+  setState(game.prevState === State.FEEDBACK ? State.FEEDBACK : State.PLAYING);
+  say('Permainan dilanjutkan.');
+}
+function goHome(){
+  hideBalloons();
+  setState(State.OPENING);
+}
+
+/* ========================= INPUT MANUAL / KEYBOARD ===================== */
+function ndcFromClient(cx, cy){
+  return { x: (cx / window.innerWidth) * 2 - 1, y: -((cy / window.innerHeight) * 2 - 1) };
+}
+function pickSlotFromNDC(nx, ny){
+  if (!has3D) return -1;
+  pointerNDC.set(nx, ny);
+  raycaster.setFromCamera(pointerNDC, camera3);
+  const targets = balloons.filter(b => b.visible && !b.userData.popping);
+  const hits = raycaster.intersectObjects(targets, true);
+  if (hits.length){
+    let o = hits[0].object;
+    while (o && o.parent && o.userData.index === undefined) o = o.parent;
+    if (o && o.userData && o.userData.index !== undefined) return o.userData.index;
+  }
+  return -1;
+}
+
+el.canvas.addEventListener('pointermove', (e)=>{
+  if (game.state !== State.PLAYING || game.answered || gestureCursorActive) return;
+  const n = ndcFromClient(e.clientX, e.clientY);
+  const slot = pickSlotFromNDC(n.x, n.y);
+  if (slot >= 0) setHover(slot);
+  else { game.hovered = -1; if (has3D) balloons.forEach(b=>b.userData.hovered=false); }
+  el.canvas.style.cursor = slot >= 0 ? 'pointer' : 'default';
+});
+el.canvas.addEventListener('pointerdown', (e)=>{
+  sound.init();
+  if (game.state !== State.PLAYING || game.answered) return;
+  const n = ndcFromClient(e.clientX, e.clientY);
+  const slot = pickSlotFromNDC(n.x, n.y);
+  if (slot >= 0) chooseAnswer(slot);
+});
+
+window.addEventListener('keydown', (e)=>{
+  if (e.key === 'Escape'){
+    if (game.state === State.PLAYING || game.state === State.FEEDBACK) { pauseGame(); e.preventDefault(); }
+    else if (game.state === State.PAUSED) { resumeGame(); e.preventDefault(); }
+    return;
+  }
+  if (game.state === State.FEEDBACK && (e.key === 'Enter' || e.key === ' ')){
+    if (document.activeElement === document.body){ nextQuestion(); e.preventDefault(); }
+    return;
+  }
+  if (game.state !== State.PLAYING || game.answered) return;
+  if (['1','2','3','4'].includes(e.key)){ chooseAnswer(parseInt(e.key,10)-1); e.preventDefault(); }
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowDown'){ setHover(((game.hovered<0?-1:game.hovered)+1+4)%4); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ setHover(((game.hovered<0?1:game.hovered)+3)%4); e.preventDefault(); }
+  else if (e.key === 'Enter'){ if (game.hovered >= 0) { chooseAnswer(game.hovered); e.preventDefault(); } }
+});
+
+/* ======================= MEDIAPIPE HANDS & GESTUR ====================== */
+let hands = null, mpCamera = null, mediaStream = null;
+let gestureCursorActive = false;
+let handLost = 0;
+const gestureBuf = [];
+const smooth = { x: 0.5, y: 0.5, init: false };
+let pinchDown = false, lastPinchTime = 0, lastGesture = 'NONE';
+let fistStableSince = 0, fistHandled = false;
+let openStableSince = 0, openHandled = false;
+
+const TUNE = {
+  pinchOn: 0.46, pinchOff: 0.66, pinchCooldown: 750,
+  extendRatio: 1.12, smoothing: 0.42, bufLen: 6, bufMin: 4,
+  fistHoldMs: 600, openHoldMs: 450
+};
+
+function dist(a,b){ const dx=a.x-b.x, dy=a.y-b.y, dz=(a.z||0)-(b.z||0); return Math.hypot(dx,dy,dz); }
+function isExtended(lm, tip, pip){ return dist(lm[tip], lm[0]) > dist(lm[pip], lm[0]) * TUNE.extendRatio; }
+
+function classifyGesture(lm){
+  const scale = Math.max(0.0001, dist(lm[0], lm[9]));
+  const pinchRatio = dist(lm[4], lm[8]) / scale;
+  const idx = isExtended(lm,8,6), mid = isExtended(lm,12,10), rin = isExtended(lm,16,14), pin = isExtended(lm,20,18);
+  const count = [idx,mid,rin,pin].filter(Boolean).length;
+  let g = 'NONE';
+  if (pinchRatio < TUNE.pinchOn) g = 'PINCH';
+  else if (count >= 4) g = 'OPEN';
+  else if (count === 0) g = 'FIST';
+  else if (idx && !mid && !rin && !pin) g = 'POINT';
+  return { g, pinchRatio };
+}
+function smoothGesture(g){
+  gestureBuf.push(g);
+  if (gestureBuf.length > TUNE.bufLen) gestureBuf.shift();
+  const counts = {};
+  gestureBuf.forEach(x => counts[x] = (counts[x]||0)+1);
+  let best = 'NONE', bc = 0;
+  for (const k in counts){ if (counts[k] > bc){ bc = counts[k]; best = k; } }
+  return bc >= TUNE.bufMin ? best : lastGesture;
+}
+
+function onHandResults(results){
+  try{
+    const lms = results && results.multiHandLandmarks;
+    if (!lms || !lms.length){
+      handLost++;
+      if (handLost > 6){
+        gestureCursorActive = false;
+        updateCursorVisibility();
+        setGestureChip('Tangan tidak terdeteksi — arahkan telunjuk ke balon');
+        if (has3D && game.state === State.PLAYING && !game.answered){
+          balloons.forEach(b=>b.userData.hovered=false); game.hovered = -1;
+        }
+      }
+      return;
+    }
+    handLost = 0;
+    const lm = lms[0];
+    const { g, pinchRatio } = classifyGesture(lm);
+    const gs = smoothGesture(g);
+
+    // posisi kursor (mirror agar konsisten dengan video selfie)
+    const rawX = 1 - lm[8].x, rawY = lm[8].y;
+    if (!smooth.init){ smooth.x = rawX; smooth.y = rawY; smooth.init = true; }
+    smooth.x += (rawX - smooth.x) * TUNE.smoothing;
+    smooth.y += (rawY - smooth.y) * TUNE.smoothing;
+    gestureCursorActive = true;
+    updateCursorVisibility();
+    el.cursor.style.left = (smooth.x * 100) + '%';
+    el.cursor.style.top  = (smooth.y * 100) + '%';
+    el.cursor.classList.toggle('pinch', pinchRatio < TUNE.pinchOn);
+
+    const label = { OPEN:'Telapak terbuka ✋', POINT:'Menunjuk 👆', PINCH:'Pinch 🤏', FIST:'Kepalan ✊', NONE:'–' }[gs] || '–';
+    setGestureChip('Gestur: ' + label);
+
+    const now = performance.now();
+
+    // ---- OPEN HAND: mulai / lanjutkan
+    if (gs === 'OPEN'){
+      if (!openStableSince) openStableSince = now;
+      if (now - openStableSince > TUNE.openHoldMs && !openHandled){
+        openHandled = true;
+        if (game.state === State.PAUSED) resumeGame();
+        else if (game.state === State.FEEDBACK) nextQuestion();
+      }
+    } else { openStableSince = 0; openHandled = false; }
+
+    // ---- FIST: jeda (edge trigger)
+    if (gs === 'FIST'){
+      if (!fistStableSince) fistStableSince = now;
+      if (now - fistStableSince > TUNE.fistHoldMs && !fistHandled){
+        fistHandled = true;
+        if (game.state === State.PLAYING || game.state === State.FEEDBACK) pauseGame();
+      }
+    } else { fistStableSince = 0; fistHandled = false; }
+
+    // ---- POINT: sorot balon
+    if (game.state === State.PLAYING && !game.answered && (gs === 'POINT' || gs === 'PINCH' || gs === 'OPEN')){
+      const nx = smooth.x*2 - 1, ny = -(smooth.y*2 - 1);
+      const slot = pickSlotFromNDC(nx, ny);
+      if (slot >= 0) setHover(slot);
+      else { game.hovered = -1; if (has3D) balloons.forEach(b=>b.userData.hovered=false); }
+    }
+
+    // ---- PINCH: konfirmasi (edge trigger + cooldown + butuh pelepasan)
+    if (pinchRatio < TUNE.pinchOn && !pinchDown){
+      pinchDown = true;
+      if (now - lastPinchTime > TUNE.pinchCooldown){
+        lastPinchTime = now;
+        if (game.state === State.PLAYING && !game.answered && game.hovered >= 0) chooseAnswer(game.hovered);
+        else if (game.state === State.FEEDBACK) nextQuestion();
+        else if (game.state === State.RESULT) startGame();
+      }
+    } else if (pinchRatio > TUNE.pinchOff && pinchDown){
+      pinchDown = false;
+    }
+    lastGesture = gs;
+  }catch(err){ /* jangan hentikan permainan karena galat gestur */ }
+}
+
+function setGestureChip(txt){ el.gestureChip.textContent = txt; }
+function updateCursorVisibility(){
+  const show = gestureCursorActive && (game.state === State.PLAYING || game.state === State.PAUSED || game.state === State.FEEDBACK);
+  el.cursor.classList.toggle('hidden', !show);
+}
+function setCamStatus(txt, cls){
+  el.camStatus.textContent = txt;
+  el.camDot.className = 'pulse-dot ' + (cls || '');
+}
+
+async function enableCamera(){
+  if (game.cameraMode) return true;
+  setState(State.LOADING);
+  el.loadingMsg.textContent = 'Meminta izin kamera… Mohon pilih "Izinkan" pada peramban.';
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    failCamera('Peramban ini tidak mendukung akses kamera. Kamu tetap bisa bermain tanpa kamera.');
+    return false;
+  }
+  if (!window.isSecureContext){
+    failCamera('Kamera memerlukan koneksi aman (HTTPS) atau localhost. Silakan main tanpa kamera.');
+    return false;
+  }
+  try{
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width:{ideal:640}, height:{ideal:480} }, audio: false
+    });
+  }catch(e){
+    let m = 'Kamera tidak dapat diakses.';
+    if (e && e.name === 'NotAllowedError') m = 'Izin kamera ditolak. Kamu bisa mengubahnya di pengaturan situs, atau main tanpa kamera.';
+    else if (e && e.name === 'NotFoundError') m = 'Kamera tidak ditemukan pada perangkat ini.';
+    else if (e && e.name === 'NotReadableError') m = 'Kamera sedang dipakai aplikasi lain.';
+    failCamera(m + ' Permainan tetap dapat dilanjutkan tanpa kamera.');
+    return false;
+  }
+
+  try{
+    el.video.srcObject = mediaStream;
+    await el.video.play().catch(()=>{});
+    el.video.classList.add('on');
+  }catch(e){ /* abaikan */ }
+
+  el.loadingMsg.textContent = 'Memuat model deteksi tangan dari CDN…';
+  try{
+    if (typeof window.Hands !== 'function') throw new Error('mediapipe');
+    hands = new window.Hands({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+    hands.setOptions({ maxNumHands:1, modelComplexity:0, minDetectionConfidence:0.6, minTrackingConfidence:0.6, selfieMode:false });
+    hands.onResults(onHandResults);
+
+    if (typeof window.Camera === 'function'){
+      mpCamera = new window.Camera(el.video, {
+        onFrame: async () => { try{ await hands.send({ image: el.video }); }catch(e){} },
+        width: 640, height: 480
+      });
+      await mpCamera.start();
+    } else {
+      const loop = async () => {
+        if (!game.cameraMode) return;
+        try{ if (el.video.readyState >= 2) await hands.send({ image: el.video }); }catch(e){}
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }
+  }catch(e){
+    game.cameraMode = true; // video tetap tampil sebagai latar AR
+    setCamStatus('Kamera aktif, deteksi tangan tidak tersedia — gunakan klik/ketuk atau tombol 1–4', 'warn');
+    setGestureChip('Gestur: tidak tersedia');
+    $('btnCam').setAttribute('aria-pressed','true');
+    return true;
+  }
+
+  game.cameraMode = true;
+  $('btnCam').setAttribute('aria-pressed','true');
+  setCamStatus('Kamera aktif — tunjuk balon dengan telunjuk, lalu pinch untuk memecahkan', 'ok');
+  setGestureChip('Gestur: –');
+  return true;
+}
+
+function failCamera(msg){
+  disableCamera();
+  el.openingMsg.textContent = '⚠️ ' + msg;
+  el.openingMsg.classList.remove('hidden');
+  setCamStatus('Mode manual: klik, ketuk, atau tekan 1–4', 'warn');
+  if (game.state === State.LOADING) setState(State.OPENING);
+  say(msg);
+}
+
+function disableCamera(){
+  game.cameraMode = false;
+  gestureCursorActive = false;
+  updateCursorVisibility();
+  try{ if (mpCamera && mpCamera.stop) mpCamera.stop(); }catch(e){}
+  mpCamera = null;
+  try{ if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); }catch(e){}
+  mediaStream = null;
+  try{ el.video.srcObject = null; }catch(e){}
+  el.video.classList.remove('on');
+  $('btnCam').setAttribute('aria-pressed','false');
+  setCamStatus('Mode manual: klik, ketuk, atau tekan 1–4', 'warn');
+  setGestureChip('Gestur: –');
+}
+
+/* ============================== TOMBOL UI ============================== */
+function openOptionsPanel(open){
+  el.optPanel.classList.toggle('hidden', !open);
+  el.btnToggleOpts.setAttribute('aria-expanded', String(open));
+  el.btnToggleOpts.textContent = open ? '⌨️ Sembunyikan mode tombol' : '⌨️ Mode tombol (pilihan teks)';
+}
+
+$('btnStartCam').addEventListener('click', async ()=>{
+  sound.init(); sound.resume();
+  el.openingMsg.classList.add('hidden');
+  const ok = await enableCamera();
+  startGame();
+  if (!ok) setCamStatus('Mode manual: klik, ketuk, atau tekan 1–4', 'warn');
+});
+$('btnStartManual').addEventListener('click', ()=>{
+  sound.init(); sound.resume();
+  el.openingMsg.classList.add('hidden');
+  disableCamera();
+  startGame();
+});
+$('btnSkipCam').addEventListener('click', ()=>{ disableCamera(); startGame(); });
+$('btnHome').addEventListener('click', goHome);
+$('btnHomePause').addEventListener('click', goHome);
+$('btnHomeResult').addEventListener('click', goHome);
+$('btnPause').addEventListener('click', ()=> game.state === State.PAUSED ? resumeGame() : pauseGame());
+$('btnResume').addEventListener('click', resumeGame);
+$('btnRestartPause').addEventListener('click', startGame);
+$('btnNext').addEventListener('click', nextQuestion);
+$('btnPlayAgain').addEventListener('click', startGame);
+$('btnToggleOpts').addEventListener('click', ()=> openOptionsPanel(el.optPanel.classList.contains('hidden')));
+$('btnCam').addEventListener('click', async ()=>{
+  if (game.cameraMode){ disableCamera(); }
+  else {
+    const prev = game.state;
+    const ok = await enableCamera();
+    setState(prev === State.LOADING ? State.PLAYING : prev);
+    if (!ok) setState(prev === State.OPENING ? State.OPENING : State.PLAYING);
+  }
+});
+$('btnSound').addEventListener('click', (e)=>{
+  game.muted = !game.muted;
+  e.currentTarget.setAttribute('aria-pressed', String(!game.muted));
+  e.currentTarget.innerHTML = (game.muted ? '🔇' : '🔊') + ' <span class="hidden sm:inline">Suara</span>';
+  if (!game.muted){ sound.init(); sound.resume(); sound.tone(700,0.1,'sine',0.12); }
+  say(game.muted ? 'Suara dimatikan.' : 'Suara dinyalakan.');
+});
+
+/* ============================== MULAI APP ============================== */
+(async function boot(){
+  setState(State.OPENING);
+  setCamStatus('Mode manual: klik, ketuk, atau tekan 1–4', 'warn');
+  const ok = await initThree();
+  if (ok){
+    el.webglNote.textContent = 'Objek 3D dibuat prosedural dengan Three.js — tanpa gambar atau model dari luar.';
+  }
+  if (typeof window.Hands !== 'function'){
+    el.webglNote.textContent += ' Catatan: pustaka deteksi tangan mungkin belum termuat; permainan tetap jalan tanpa kamera.';
+  }
+})();
+</script>
+</body>
+</html>
